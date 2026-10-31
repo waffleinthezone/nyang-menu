@@ -3,11 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
 </head>
 <body>
 <title>메뉴냥</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Pixelify+Sans:wght@400;600&display=swap">
@@ -171,6 +170,14 @@ body{
   border:2px solid var(--line); border-radius:10px; padding:8px 10px; font-size:14px}
 .confirm div{display:flex; gap:6px}
 .host-note{margin:0; font-size:13px; color:var(--deep); min-height:1.2em}
+.gh{border:2px dashed var(--pink); border-radius:10px; padding:8px 10px; font-size:14px}
+.gh summary{cursor:pointer; color:var(--ink)}
+.gh-grid{display:grid; grid-template-columns:auto minmax(0,1fr); gap:6px 8px; align-items:center; margin:8px 0 6px}
+.gh-grid label{font-size:13px; color:var(--muted)}
+.gh-grid input{font-family:var(--f-latin); font-size:14px; color:var(--ink); background:var(--panel); border:2px solid var(--pink); border-radius:7px; padding:5px 7px; min-width:0; width:100%}
+.gh-grid input:focus{outline:none; border-color:var(--deep)}
+.gh small{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+.gh .mini-btn{font-size:13px; padding:4px 10px}
 .host-actions{display:flex; gap:6px; align-items:center}
 .host-actions .grow{flex:1}
 .mini-btn{font-family:var(--f-ko); font-size:15px; color:var(--panel); background:var(--deep); border:3px solid var(--line); border-radius:10px;
@@ -207,6 +214,17 @@ body{
       <span>이 종류를 처음 기본 메뉴로 되돌릴까요?</span>
       <div><button class="mini-btn" id="resetYes" type="button">되돌리기</button><button class="mini-btn ghost" id="resetNo" type="button">취소</button></div>
     </div>
+    <details class="gh" id="ghBox">
+      <summary>GitHub 연결 설정</summary>
+      <div class="gh-grid">
+        <label for="ghOwner">계정</label><input id="ghOwner" placeholder="my-github-id" autocomplete="off">
+        <label for="ghRepo">저장소</label><input id="ghRepo" placeholder="menu-nyang" autocomplete="off">
+        <label for="ghBranch">브랜치</label><input id="ghBranch" placeholder="main" autocomplete="off">
+        <label for="ghToken">토큰</label><input id="ghToken" type="password" placeholder="github_pat_…" autocomplete="off">
+      </div>
+      <small>토큰은 이 브라우저에만 저장돼요. 저장소의 menu.json 파일만 바꿔요.</small>
+      <button class="mini-btn ghost" id="ghForget" type="button">이 브라우저에서 토큰 지우기</button>
+    </details>
     <p class="host-note" id="hostNote" role="status"></p>
     <div class="host-actions">
       <button class="mini-btn ghost" id="resetBtn" type="button">기본값</button>
@@ -518,7 +536,7 @@ const KEYS = Object.keys(MENUS);
 const DEFAULTS = Object.fromEntries(KEYS.map(k => [k, MENUS[k].items.map(it => it.slice())]));
 const hostEl = $('host'), screenEl = $('screen'), hostBtn = $('hostBtn'), rowsEl = $('rows'), tabsEl = $('tabs'),
       noteEl = $('hostNote'), confirmEl = $('confirm');
-let draft = null, tab = 'kor', menuDoc = null, hostOpen = false;
+let draft = null, tab = 'kor', hostOpen = false;
 
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function clean(list){
@@ -592,6 +610,30 @@ $('resetYes').onclick = () => {
   noteEl.textContent = `${MENUS[tab].label}을 기본 메뉴로 되돌렸어요. 저장을 눌러야 적용돼요.`;
   renderTabs(); renderRows();
 };
+/* GitHub Pages: the menu lives in menu.json next to this page; the host saves by committing it */
+const LS = 'menu-nyang-gh';
+function lsGet(){ try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { return {}; } }
+function lsSet(v){ try { localStorage.setItem(LS, JSON.stringify(v)); } catch (e) {} }
+const ghF = {owner:$('ghOwner'), repo:$('ghRepo'), branch:$('ghBranch'), token:$('ghToken')};
+(function prefill(){
+  const saved = lsGet(); let owner = '', repo = '';
+  const h = location.hostname;
+  if (h.endsWith('.github.io')){
+    owner = h.replace('.github.io', '');
+    const seg = location.pathname.split('/').filter(Boolean)[0];
+    repo = seg && !seg.includes('.') ? seg : h;
+  }
+  ghF.owner.value = saved.owner || owner; ghF.repo.value = saved.repo || repo;
+  ghF.branch.value = saved.branch || 'main'; ghF.token.value = saved.token || '';
+  $('ghBox').open = !ghF.token.value;
+})();
+function ghSettings(){
+  const v = {owner:ghF.owner.value.trim(), repo:ghF.repo.value.trim(), branch:ghF.branch.value.trim() || 'main', token:ghF.token.value.trim()};
+  lsSet(v); return v;
+}
+$('ghForget').onclick = () => { ghF.token.value = ''; ghSettings(); noteEl.textContent = '이 브라우저에서 토큰을 지웠어요.'; };
+function b64(str){ const bytes = new TextEncoder().encode(str); let bin = ''; bytes.forEach(x => bin += String.fromCharCode(x)); return btoa(bin); }
+
 $('saveBtn').onclick = async () => {
   const out = {};
   for (const k of KEYS){
@@ -600,33 +642,45 @@ $('saveBtn').onclick = async () => {
     out[k] = list;
   }
   applyMenus(out);
-  const btn = $('saveBtn'); btn.disabled = true;
-  if (!menuDoc){
-    noteEl.textContent = '이 화면에만 적용됐어요. 모두에게 저장하려면 로그인해서 열어주세요.';
-    btn.disabled = false; return;
+  const g = ghSettings();
+  if (!g.owner || !g.repo || !g.token){
+    $('ghBox').open = true;
+    noteEl.textContent = '이 화면에만 적용됐어요. 모두에게 저장하려면 GitHub 연결 설정을 채워주세요.'; return;
   }
-  noteEl.textContent = '저장 중…';
+  const btn = $('saveBtn'); btn.disabled = true; noteEl.textContent = 'GitHub에 저장 중…';
+  const api = `https://api.github.com/repos/${encodeURIComponent(g.owner)}/${encodeURIComponent(g.repo)}/contents/menu.json`;
+  const headers = {Authorization: `Bearer ${g.token}`, Accept: 'application/vnd.github+json'};
   try {
-    await menuDoc.set({menus: out, updatedAt: new Date().toISOString()});
-    noteEl.textContent = '저장했어요! 이제 모찌가 새 메뉴로 추천해요.';
+    let sha;
+    const cur = await fetch(`${api}?ref=${encodeURIComponent(g.branch)}`, {headers, cache: 'no-store'});
+    if (cur.ok) sha = (await cur.json()).sha;
+    else if (cur.status !== 404) throw cur;
+    const body = {message: 'Update menu (메뉴냥 host)', branch: g.branch,
+      content: b64(JSON.stringify({menus: out, updatedAt: new Date().toISOString()}, null, 2) + '\n')};
+    if (sha) body.sha = sha;
+    const res = await fetch(api, {method: 'PUT', headers, body: JSON.stringify(body)});
+    if (!res.ok) throw res;
+    noteEl.textContent = '저장했어요! 1~2분 뒤 사이트에 반영돼요. 이 화면엔 이미 적용됐어요.';
   } catch (e) {
-    noteEl.textContent = '저장하지 못했어요. 이 링크의 편집 권한이 있는지 확인해 주세요.';
+    const st = e && e.status;
+    noteEl.textContent = st === 401 ? '토큰이 맞지 않아요. 토큰을 다시 확인해 주세요.'
+      : st === 403 || st === 404 ? '저장소를 찾지 못했거나 권한이 없어요. 계정, 저장소 이름, 토큰 권한(Contents: Read and write)을 확인해 주세요.'
+      : st === 409 ? '그 사이 파일이 바뀌었어요. 한 번 더 저장을 눌러주세요.'
+      : '저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.';
   }
   btn.disabled = false;
 };
 
-// connect: shared menu lives in db at config/menu; only editors see the host button
-(async () => {
-  const user = await window.claude?.use?.('user');
-  if (user && await user.canEdit()) hostBtn.hidden = false;
-  hostBtn.setAttribute('aria-pressed', 'false');
-  const db = await window.claude?.use?.('db');
-  if (!db) return;
-  menuDoc = db.doc('config/menu');
-  menuDoc.onSnapshot(snap => {
-    if (snap.exists) applyMenus(snap.data()?.menus);
-  }, () => {});
-})().catch(() => {});
+// host button: open the site with #host at the end of the address
+function syncHostBtn(){ hostBtn.hidden = location.hash !== '#host'; }
+syncHostBtn(); addEventListener('hashchange', syncHostBtn);
+hostBtn.setAttribute('aria-pressed', 'false');
+
+// load the shared menu
+fetch('menu.json?t=' + Date.now(), {cache: 'no-store'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if (d && !hostOpen) applyMenus(d.menus); })
+  .catch(() => {});
 
 intro();
 })();
